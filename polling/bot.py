@@ -1,14 +1,12 @@
+import time
 import json
 from collections import OrderedDict
-
 from telebot import types, TeleBot
-
 import config
 
 bot = TeleBot(config.token)
 bot_username = config.username
 queues = OrderedDict()
-
 
 def read_json():
     global queues
@@ -17,24 +15,17 @@ def read_json():
     for q in queues:
         queues[q] = OrderedDict(queues[q])
 
-
 def write_json():
     with open('queues.json', 'w') as f:
         f.write(json.dumps(queues))
-
 
 @bot.message_handler()
 def wrong_door(msg):
     bot.send_message(msg.chat.id, 'Я не работаю в личной переписке. Очередь - это когда минимум 2 человека. Введи '
                                   '@{} в чате и радуйся!'.format(bot_username))
 
-
 @bot.inline_handler(func=lambda chosen_inline_result: True)
 def get_msg(query: types.InlineQuery):
-    """
-    Срабатывает, когда пользователь вводит @bot_username <запрос>, предлагает варианты очередей с заданным запросом
-    :param query: текст запроса
-    """
     try:
         prepositions = ['на', 'в', 'за']
         answers = []
@@ -56,25 +47,17 @@ def get_msg(query: types.InlineQuery):
     except Exception as e:
         print(e)
 
-
 @bot.callback_query_handler(func=lambda call: call.data.startswith('enter'))
 def enter_queue(call: types.CallbackQuery):
-    """
-    Срабатывает при нажатии кнопки "Встать в очередь", не добавляет, если уже в очереди
-    :param call: callback от кнопки
-    """
     data_parts = call.data.split('_')
-    prep = data_parts[1]  # Get the correct preposition from callback data
+    prep = data_parts[1]
     subj = ' '.join(data_parts[2:])
     key = types.InlineKeyboardMarkup()
     key.add(types.InlineKeyboardButton('Встать в очередь', callback_data=call.data))
-    if call.inline_message_id not in queues:  # проверка нахождения очереди в списке текущих очередей
-        # если при нажатии кнопки очереди в списке не было, добавим в список очередь с первым человеком в ней
-        # каждая очередь - словарь участников очереди. Каждый участник очереди - пара ключ-значение, где ключ - id в тг
-        # значение - кортеж из его имени и фамилии
+    if call.inline_message_id not in queues:
         queues[call.inline_message_id] = OrderedDict(
             [(str(call.from_user.id), (call.from_user.first_name, call.from_user.last_name))])
-        last_name = '' if call.from_user.last_name is None else call.from_user.last_name  # не выводим фамилию если None
+        last_name = '' if call.from_user.last_name is None else call.from_user.last_name
         text = 'Очередь {} *{}*\n1. {} {}'.format(prep, subj, call.from_user.first_name, last_name)
         write_json()
         bot.edit_message_text(text, inline_message_id=call.inline_message_id, reply_markup=key, parse_mode='Markdown')
@@ -94,7 +77,14 @@ def enter_queue(call: types.CallbackQuery):
         else:
             bot.answer_callback_query(call.id, 'Ты уже в очереди', False)
 
+def start_bot():
+    read_json()
+    while True:
+        try:
+            bot.polling(none_stop=True, timeout=7200)
+        except Exception as e:
+            print(f"Ошибка подключения: {e}")
+            time.sleep(5)  # Задержка перед повторной попыткой подключения
 
 if __name__ == '__main__':
-    read_json()
-    bot.polling(none_stop=True, timeout=7200)
+    start_bot()
